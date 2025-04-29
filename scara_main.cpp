@@ -72,8 +72,8 @@ int main(){
 	robot.Send("PEN_UP\n");
 	robot.Send("HOME\n");
 	robot.Send("CLEAR_TRACE\n");
-	robot.Send("CLEAR_REMOTE_COMMAND_LOG\n");
 	robot.Send("CLEAR_POSITION_LOG\n");
+	robot.Send("CLEAR_REMOTE_COMMAND_LOG\n");
 
 	// Repeat Until 5: Quit is selected
 	do {

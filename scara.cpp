@@ -147,7 +147,12 @@ int scaraIK(double toolX, double toolY, double* ang1, double* ang2, int arm) {
 * check - Report if requested move was invalid
 *****************************************************************************************/
 int moveScaraJ(SCARA_ROBOT* scaraState) {
-	scaraIK(scaraState->armPos.x,scaraState->armPos.y, &scaraState->armPos.theta1, &scaraState->armPos.theta2, scaraState->armPos.armSol);
+	if (scaraIK(scaraState->armPos.x,scaraState->armPos.y, &scaraState->armPos.theta1, &scaraState->armPos.theta2, scaraState->armPos.armSol)) {
+		printf("\033[31m");
+		printf("moveScaraJ() failed: scaraIK() returned -1 (invalid move operation)");
+		printf("\033[0m");
+		return -1;
+	}
 	scaraSetState(*scaraState);
 	return 0;
 }
@@ -189,70 +194,322 @@ LINE_DATA initLine(double xA, double yA, double xB, double yB, int numPts) {
 /****************************************************************************************
 * Function: moveScaraL
 * This function will perform a linear interpolated move.
+* It calculates the line length, splits it into points at fixed distance intervals,
+* and determines the best arm solution for the entire line. If a single solution
+* is not possible, it creates two separate line segments with different solutions.
 *
 * Inputs:
 * scaraState - Contains SCARA information
+* line - Line data containing start and end points
 *
 * Returns:
-* check - Report if requested move was invalid
+* check - Report if requested move was invalid (0 for success, -1 for error)
 *****************************************************************************************/
 int moveScaraL(SCARA_ROBOT *scaraState, LINE_DATA line){
-    // Memory allocation for variable sized array of SCARA_ROBOT
-    SCARA_ROBOT *robline = (SCARA_ROBOT*) malloc(sizeof(SCARA_ROBOT)*line.numPts);
-	const char pen = scaraState->toolPos.penPos;
+    const double pointDist = 50.0;  // Default distance between points
+    const char pen = scaraState->toolPos.penPos;
     double theta1, theta2;
-    int bestArmSol;
-
-	// Check if start point is reachable
-	if (!checkBounds(line.xA, line.yA, scaraState->armPos.armSol, &theta1, &theta2, &bestArmSol)) {
-		printf("\033[31m");
-
-        printf("Error: Start point (%.2f, %.2f) is unreachable\n", line.xA, line.yA);
-		printf("\033[0m");
-        free(robline);
+    int leftArmReachable = 0, rightArmReachable = 0;
+    int leftArmUnreachableCount = 0, rightArmUnreachableCount = 0;
+    int bestOverallArmSol;
+    
+    // Calculate line length
+    double dx = line.xB - line.xA;
+    double dy = line.yB - line.yA;
+    double lineLength = sqrt(dx*dx + dy*dy);
+    
+    // Calculate number of points based on pointDist
+    int numPoints = max(2, (int)(lineLength / pointDist) + 1);
+    
+    // Check if start and end points are reachable with either arm solution
+    int startLeftReachable = scaraIK(line.xA, line.yA, &theta1, &theta2, LEFT_ARM_SOLUTION) == 0;
+    int startRightReachable = scaraIK(line.xA, line.yA, &theta1, &theta2, RIGHT_ARM_SOLUTION) == 0;
+    int endLeftReachable = scaraIK(line.xB, line.yB, &theta1, &theta2, LEFT_ARM_SOLUTION) == 0;
+    int endRightReachable = scaraIK(line.xB, line.yB, &theta1, &theta2, RIGHT_ARM_SOLUTION) == 0;
+    
+    // Arrays to track reachability of each point with each arm solution
+    int* leftArmSolReachable = (int*)malloc(numPoints * sizeof(int));
+    int* rightArmSolReachable = (int*)malloc(numPoints * sizeof(int));
+    
+    // Analyze all points along the line for both arm solutions
+    double step = 1.0 / (numPoints - 1);
+    
+    // Check each point along the line for both arm solutions
+    for (int i = 0; i < numPoints; i++) {
+        double t = i * step;
+        double x = line.xA + t * dx;
+        double y = line.yA + t * dy;
+        
+        // Check left arm solution
+        leftArmSolReachable[i] = (scaraIK(x, y, &theta1, &theta2, LEFT_ARM_SOLUTION) == 0);
+        if (leftArmSolReachable[i]) {
+            leftArmReachable++;
+        } else {
+            leftArmUnreachableCount++;
+        }
+        
+        // Check right arm solution
+        rightArmSolReachable[i] = (scaraIK(x, y, &theta1, &theta2, RIGHT_ARM_SOLUTION) == 0);
+        if (rightArmSolReachable[i]) {
+            rightArmReachable++;
+        } else {
+            rightArmUnreachableCount++;
+        }
+    }
+    
+    // Check if any points are reachable
+    if (leftArmReachable == 0 && rightArmReachable == 0) {
+        printf("\033[31m");
+        printf("Error: No points along the line from (%.2f, %.2f) to (%.2f, %.2f) are reachable\n", 
+               line.xA, line.yA, line.xB, line.yB);
+        printf("\033[0m");
+        free(leftArmSolReachable);
+        free(rightArmSolReachable);
         return -1;
     }
-
-    // Update arm solution if needed for start point
-    if (bestArmSol != scaraState->armPos.armSol) {
-        printf("Switching arm solution for start point: %s to %s\n",
-               (scaraState->armPos.armSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT",
-               (bestArmSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT");
-        scaraState->armPos.armSol = bestArmSol;
-        scaraState->armPos.theta1 = theta1;
-        scaraState->armPos.theta2 = theta2;
+    
+    // Determine the best overall arm solution
+    if (leftArmReachable > rightArmReachable) {
+        bestOverallArmSol = LEFT_ARM_SOLUTION;
+        printf("Left arm solution is better (reachable points: %d/%d)\n", leftArmReachable, numPoints);
+    } else {
+        bestOverallArmSol = RIGHT_ARM_SOLUTION;
+        printf("Right arm solution is better (reachable points: %d/%d)\n", rightArmReachable, numPoints);
     }
-
-    // Check if end point is reachable
-    if (!checkBounds(line.xB, line.yB, scaraState->armPos.armSol, NULL, NULL, NULL)) {
-        printf("Warning: End point (%.2f, %.2f) is unreachable with current arm solution\n", line.xB, line.yB);
-        // Continue anyway, the path planning will handle this
+    
+    // Find first and last reachable points for each solution
+    int leftFirstReachable = -1, leftLastReachable = -1;
+    int rightFirstReachable = -1, rightLastReachable = -1;
+    
+    for (int i = 0; i < numPoints; i++) {
+        if (leftArmSolReachable[i]) {
+            if (leftFirstReachable == -1) leftFirstReachable = i;
+            leftLastReachable = i;
+        }
+        if (rightArmSolReachable[i]) {
+            if (rightFirstReachable == -1) rightFirstReachable = i;
+            rightLastReachable = i;
+        }
     }
-
-    // Calculate how many segments are needed based on line reachability and arm solution switches
-    int segments = calculateSegments(line, scaraState);
-    printf("Line from (%.2f, %.2f) to (%.2f, %.2f) requires %d segments\n", line.xA, line.yA, line.xB, line.yB, segments);
-
-	// Move to the start point
-	scaraState->armPos.x = line.xA;
-	scaraState->armPos.y = line.yA;
-	moveScaraJ(scaraState);
-
-	//move to each line segment with the calculated number of segments
-	if (pen == 'D' || pen == 'd') {
-		scaraState->toolPos.penPos = 'D';
-		scaraSetState(*scaraState);
-	}
-
-	// Use the calculated number of segments for lerp
-	lerp(scaraState, line, segments);
-
-	scaraState->toolPos.penPos = 'U';
-	scaraSetState(*scaraState);
-
-    // Free up memory allocated.
-    free(robline);
-	return 0;
+    
+    // Choose the solution that can reach more of the line
+    int firstReachable, lastReachable;
+    int armSol;
+    
+    if ((leftLastReachable - leftFirstReachable) > (rightLastReachable - rightFirstReachable)) {
+        firstReachable = leftFirstReachable;
+        lastReachable = leftLastReachable;
+        armSol = LEFT_ARM_SOLUTION;
+        printf("Using LEFT arm solution for maximum coverage\n");
+    } else {
+        firstReachable = rightFirstReachable;
+        lastReachable = rightLastReachable;
+        armSol = RIGHT_ARM_SOLUTION;
+        printf("Using RIGHT arm solution for maximum coverage\n");
+    }
+    
+    // Calculate the coordinates of the reachable segment
+    double t_first = firstReachable * step;
+    double t_last = lastReachable * step;
+    double x_first = line.xA + t_first * dx;
+    double y_first = line.yA + t_first * dy;
+    double x_last = line.xA + t_last * dx;
+    double y_last = line.yA + t_last * dy;
+    
+    printf("Reachable segment: (%.2f, %.2f) to (%.2f, %.2f)\n", x_first, y_first, x_last, y_last);
+    
+    // Check if we need to use two arm solutions
+    int needTwoSolutions = false;
+    int transitionPoint = -1;
+    
+    // Check for gaps in reachability with the primary solution
+    int* primarySolReachable = (armSol == LEFT_ARM_SOLUTION) ? leftArmSolReachable : rightArmSolReachable;
+    int secondarySol = (armSol == LEFT_ARM_SOLUTION) ? RIGHT_ARM_SOLUTION : LEFT_ARM_SOLUTION;
+    int* secondarySolReachable = (armSol == LEFT_ARM_SOLUTION) ? rightArmSolReachable : leftArmSolReachable;
+    
+    // Find a point where we need to switch solutions
+    for (int i = firstReachable; i < lastReachable; i++) {
+        if (!primarySolReachable[i] && secondarySolReachable[i]) {
+            needTwoSolutions = true;
+            transitionPoint = i - 1; // Last point before the gap
+            break;
+        }
+    }
+    
+    // If we need two solutions but didn't find a transition point, find the midpoint
+    if (needTwoSolutions && transitionPoint == -1) {
+        // Check if the line crosses the x-axis (y=0)
+        if ((line.yA > 0 && line.yB < 0) || (line.yA < 0 && line.yB > 0)) {
+            // Calculate the point where the line crosses y=0
+            // Using the line equation: y = line.yA + t * dy, solve for t when y = 0
+            double t_crossing = -line.yA / dy;
+            
+            // Convert t to the nearest point index
+            int crossingPoint = (int)(t_crossing / step);
+            
+            // Ensure the crossing point is within our range
+            if (crossingPoint >= firstReachable && crossingPoint <= lastReachable) {
+                transitionPoint = crossingPoint;
+                printf("Line crosses x-axis. Setting transition at y=0 point.\n");
+            }
+        }
+        
+        // If we still don't have a transition point, use the midpoint
+        if (transitionPoint == -1) {
+            // Find the midpoint of the reachable range
+            transitionPoint = (firstReachable + lastReachable) / 2;
+        }
+    }
+    
+    // If we can draw the line with a single solution
+    if (!needTwoSolutions) {
+        // Create a line segment for the reachable portion
+        LINE_DATA reachableSegment;
+        reachableSegment.xA = x_first;
+        reachableSegment.yA = y_first;
+        reachableSegment.xB = x_last;
+        reachableSegment.yB = y_last;
+        reachableSegment.numPts = lastReachable - firstReachable + 1;
+        reachableSegment.color = line.color;
+        
+        // Move to the start point
+        scaraState->armPos.x = reachableSegment.xA;
+        scaraState->armPos.y = reachableSegment.yA;
+        
+        // Set the arm solution
+        if (scaraIK(reachableSegment.xA, reachableSegment.yA, &theta1, &theta2, armSol) == 0) {
+            scaraState->armPos.armSol = armSol;
+            scaraState->armPos.theta1 = theta1;
+            scaraState->armPos.theta2 = theta2;
+            
+            // Move to start point
+            moveScaraJ(scaraState);
+            
+            // Set pen down for drawing
+            if (pen == 'D' || pen == 'd') {
+                scaraState->toolPos.penPos = 'D';
+                scaraSetState(*scaraState);
+            }
+            
+            // Draw the reachable segment
+            lerp(scaraState, reachableSegment, reachableSegment.numPts);
+        } else {
+            printf("\033[31m");
+            printf("Error: Failed to move to start point (%.2f, %.2f)\n", reachableSegment.xA, reachableSegment.yA);
+            printf("\033[0m");
+        }
+    } else {
+        // We need to use two arm solutions
+        // Calculate the transition coordinates
+        double t_transition = transitionPoint * step;
+        double x_transition = line.xA + t_transition * dx;
+        double y_transition = line.yA + t_transition * dy;
+        
+        printf("Using two arm solutions with transition at (%.2f, %.2f)\n", x_transition, y_transition);
+        
+        // Find the first reachable point with the secondary solution
+        int secondaryFirstReachable = -1;
+        for (int i = transitionPoint; i <= lastReachable; i++) {
+            if (secondarySolReachable[i]) {
+                secondaryFirstReachable = i;
+                break;
+            }
+        }
+        
+        if (secondaryFirstReachable == -1) {
+            printf("\033[33m");
+            printf("Warning: No reachable points with secondary solution after transition\n");
+            printf("\033[0m");
+            secondaryFirstReachable = transitionPoint;
+        }
+        
+        // Calculate the coordinates for the secondary start point
+        double t_secondary = secondaryFirstReachable * step;
+        double x_secondary = line.xA + t_secondary * dx;
+        double y_secondary = line.yA + t_secondary * dy;
+        
+        // Create first line segment (start to transition)
+        LINE_DATA firstSegment;
+        firstSegment.xA = x_first;
+        firstSegment.yA = y_first;
+        firstSegment.xB = x_transition;
+        firstSegment.yB = y_transition;
+        firstSegment.numPts = transitionPoint - firstReachable + 1;
+        firstSegment.color = line.color;
+        
+        // Move to the start point with primary solution
+        if (scaraIK(firstSegment.xA, firstSegment.yA, &theta1, &theta2, armSol) == 0) {
+            scaraState->armPos.armSol = armSol;
+            scaraState->armPos.theta1 = theta1;
+            scaraState->armPos.theta2 = theta2;
+            scaraState->armPos.x = firstSegment.xA;
+            scaraState->armPos.y = firstSegment.yA;
+            
+            // Move to start point
+            moveScaraJ(scaraState);
+            
+            // Set pen down for drawing
+            if (pen == 'D' || pen == 'd') {
+                scaraState->toolPos.penPos = 'D';
+                scaraSetState(*scaraState);
+            }
+            
+            // Draw first segment
+            lerp(scaraState, firstSegment, firstSegment.numPts);
+            
+            // Lift pen before switching arm solution
+            scaraState->toolPos.penPos = 'U';
+            scaraSetState(*scaraState);
+        } else {
+            printf("\033[31m");
+            printf("Error: Failed to move to first segment start point (%.2f, %.2f)\n", firstSegment.xA, firstSegment.yA);
+            printf("\033[0m");
+        }
+        
+        // Create second line segment (secondary start to end)
+        LINE_DATA secondSegment;
+        secondSegment.xA = x_secondary;
+        secondSegment.yA = y_secondary;
+        secondSegment.xB = x_last;
+        secondSegment.yB = y_last;
+        secondSegment.numPts = lastReachable - secondaryFirstReachable + 1;
+        secondSegment.color = line.color;
+        
+        // Move to the secondary start point with secondary solution
+        if (scaraIK(secondSegment.xA, secondSegment.yA, &theta1, &theta2, secondarySol) == 0) {
+            scaraState->armPos.armSol = secondarySol;
+            scaraState->armPos.theta1 = theta1;
+            scaraState->armPos.theta2 = theta2;
+            scaraState->armPos.x = secondSegment.xA;
+            scaraState->armPos.y = secondSegment.yA;
+            
+            // Move to secondary start point
+            moveScaraJ(scaraState);
+            
+            // Set pen down for drawing
+            if (pen == 'D' || pen == 'd') {
+                scaraState->toolPos.penPos = 'D';
+                scaraSetState(*scaraState);
+            }
+            
+            // Draw second segment
+            lerp(scaraState, secondSegment, secondSegment.numPts);
+        } else {
+            printf("\033[31m");
+            printf("Error: Failed to move to second segment start point (%.2f, %.2f)\n", secondSegment.xA, secondSegment.yA);
+            printf("\033[0m");
+        }
+    }
+    
+    // Lift pen after drawing
+    scaraState->toolPos.penPos = 'U';
+    scaraSetState(*scaraState);
+    
+    // Free memory
+    free(leftArmSolReachable);
+    free(rightArmSolReachable);
+    
+    return 0;
 }
 
 /****************************************************************************************
@@ -299,80 +556,6 @@ int checkBounds(double x, double y, int armSol, double* theta1, double* theta2, 
 }
 
 /****************************************************************************************
-* Function: calculateSegments
-*
-* Description:
-*	Calculates the number of segments needed for a line based on reachability checks.
-*   More segments are added for lines that cross unreachable regions.
-*
-* Inputs:
-*	line       - Line data for the movement
-*   scaraState - Pointer to the SCARA robot state for current arm solution
-*
-* Returns: int - Number of segments recommended (minimum 2)
-*
-* Last Modified: April 25, 2025
-*****************************************************************************************/
-int calculateSegments(LINE_DATA line, SCARA_ROBOT *scaraState) {
-    const int MIN_SEGMENTS = 10;
-    const int MAX_SEGMENTS = 100;
-    const int DEFAULT_SEGMENTS = 20;
-    const int TEST_POINTS = 40;
-
-    int unreachablePoints = 0;
-    int armSolutionSwitches = 0;
-    double dx = (line.xB - line.xA) / (TEST_POINTS - 1);
-    double dy = (line.yB - line.yA) / (TEST_POINTS - 1);
-    int currentArmSol = scaraState->armPos.armSol;
-    int lastArmSol = currentArmSol;
-
-    // Check if start and end points are reachable
-    double theta1, theta2;
-    int startArmSol, endArmSol;
-    int startReachable = checkBounds(line.xA, line.yA, currentArmSol, &theta1, &theta2, &startArmSol);
-    int endReachable = checkBounds(line.xB, line.yB, currentArmSol, &theta1, &theta2, &endArmSol);
-
-    if (!startReachable && !endReachable) {
-        printf("Warning: Both start and end points are unreachable\n");
-        return MAX_SEGMENTS; // Maximum segments for very difficult paths
-    }
-
-    // Check if arm solution switch is needed between start and end
-    if (startReachable && endReachable && startArmSol != endArmSol) {
-        printf("Arm solution switch required: %s to %s\n",
-               (startArmSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT",
-               (endArmSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT");
-        armSolutionSwitches++;
-    }
-
-    // Check points along the line
-    for (int i = 1; i < TEST_POINTS - 1; i++) {
-        double x = line.xA + i * dx;
-        double y = line.yA + i * dy;
-        int pointArmSol;
-
-        if (!checkBounds(x, y, currentArmSol, &theta1, &theta2, &pointArmSol)) {
-            unreachablePoints++;
-            printf("Warning: Point (%.2f, %.2f) along the line is unreachable\n", x, y);
-        } else if (pointArmSol != lastArmSol) {
-            // Arm solution switch detected
-            armSolutionSwitches++;
-            printf("Arm solution switch at point (%.2f, %.2f): %s to %s\n", x, y, (lastArmSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT", (pointArmSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT");
-            lastArmSol = pointArmSol;
-        }
-    }
-
-    // Calculate segments based on unreachable points and arm solution switches
-    if (unreachablePoints == 0 && armSolutionSwitches == 0) {
-        return MIN_SEGMENTS + 8; // Smooth path for fully reachable lines with no switches
-    } else {
-        // More segments for lines with unreachable regions or arm solution switches
-        int segments = MIN_SEGMENTS + unreachablePoints * 4 + armSolutionSwitches * 6;
-        return (segments > MAX_SEGMENTS) ? MAX_SEGMENTS : segments;
-    }
-}
-
-/****************************************************************************************
 * Function: lerp
 *
 * Description:
@@ -411,9 +594,6 @@ int lerp(SCARA_ROBOT *scaraState, LINE_DATA line, int numpoints) {
     // Calculate the differences between start and end points
     dx = line.xB - line.xA;
     dy = line.yB - line.yA;
-
-    // Set pen color
-    scaraState->toolPos.penColor = line.color;
 
     // Set pen down for drawing
     scaraState->toolPos.penPos = 'd';
@@ -601,18 +781,12 @@ void setScaraAngles(double ang1, double ang2) {
 *****************************************************************************************/
 void setScaraPen(char pen) {
 	switch (pen) {
-		case 'U':
-		case 'u':
-			robot.Send("PEN_UP\n");
-		break;
 		case 'D':
 		case 'd':
 			robot.Send("PEN_DOWN\n");
 		break;
 		default:
-			printf("\033[31m");
-			printf("Invalid pen: \'%c\'\n",pen);
-			printf("\033[0m");
+			robot.Send("PEN_UP\n");
 	}
 }
 

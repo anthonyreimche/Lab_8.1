@@ -1,0 +1,3 @@
+C:/Users/roota/CLionProjects/Lab 8_new/cmake-build-debug/CMakeFiles/Lab_8_new.dir
+C:/Users/roota/CLionProjects/Lab 8_new/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/roota/CLionProjects/Lab 8_new/cmake-build-debug/CMakeFiles/rebuild_cache.dir

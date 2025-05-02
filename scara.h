@@ -69,9 +69,6 @@ typedef struct SCARA_ROBOT {
 int moveScaraJ(SCARA_ROBOT* scaraState);
 int moveScaraL(SCARA_ROBOT* scaraState, LINE_DATA line);
 LINE_DATA initLine(double xA, double yA, double xB, double yB, int numPts);
-int lerp(SCARA_ROBOT *scaraState, LINE_DATA line, int numpoints);
-int checkBounds(double x, double y, int armSol, double* theta1, double* theta2, int* bestArmSol);
-int calculateSegments(LINE_DATA line, SCARA_ROBOT *scaraState);
 
 // SCARA State Functions
 SCARA_ROBOT initScaraState(double x, double y, int armSol, SCARA_TOOL penState, char mtrSpeed);

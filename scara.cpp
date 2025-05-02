@@ -183,10 +183,35 @@ LINE_DATA initLine(double xA, double yA, double xB, double yB, int numPts) {
 	// Set number of points
 	line.numPts = numPts;
 
-	// Default color (can be modified later)
-	line.color.r = 0;
-	line.color.g = 0;
-	line.color.b = 0;
+	// Calculate the slope and set color based on slope
+	double dx = xB - xA;
+	double dy = yB - yA;
+	double tolerance = 1.0e-5;
+
+	// Zero slope (horizontal line): Green
+	if (fabs(dy) <= tolerance) {
+		line.color.r = 0;
+		line.color.g = 255;
+		line.color.b = 0;
+	}
+	// Infinity slope (vertical line): Black
+	else if (fabs(dx) <= tolerance) {
+		line.color.r = 0;
+		line.color.g = 0;
+		line.color.b = 0;
+	}
+	// Positive slope: Blue
+	else if (dy / dx > 0) {
+		line.color.r = 0;
+		line.color.g = 0;
+		line.color.b = 255;
+	}
+	// Negative slope: Red
+	else {
+		line.color.r = 255;
+		line.color.g = 0;
+		line.color.b = 0;
+	}
 
 	return line;
 }
@@ -203,211 +228,58 @@ LINE_DATA initLine(double xA, double yA, double xB, double yB, int numPts) {
 * check - Report if requested move was invalid (0 for success, -1 for error)
 *****************************************************************************************/
 int moveScaraL(SCARA_ROBOT *scaraState, LINE_DATA line){
-    const double pointDist = 50.0;  // Default distance between points
-    const char pen = scaraState->toolPos.penPos;
-    double theta1, theta2;
-    int bestArmSol;
-    
-    // Calculate line length
-    double dx = line.xB - line.xA;
-    double dy = line.yB - line.yA;
-    double lineLength = sqrt(dx*dx + dy*dy);
-    
-    // Calculate number of points based on pointDist
-    int numPoints = max(2, (int)(lineLength / pointDist) + 1);
-    
-    // Check if start and end points are reachable with any arm solution
-    if (!checkBounds(line.xA, line.yA, scaraState->armPos.armSol, &theta1, &theta2, &bestArmSol) &&
-        !checkBounds(line.xB, line.yB, scaraState->armPos.armSol, &theta1, &theta2, &bestArmSol)) {
-        printf("\033[31m");
-        printf("Error: Both start (%.2f, %.2f) and end (%.2f, %.2f) points are unreachable\n", 
-               line.xA, line.yA, line.xB, line.yB);
-        printf("\033[0m");
-        return -1;
-    }
-    
-    // Update line's number of points
-    line.numPts = numPoints;
-    
-    // Move to start point
-    scaraState->armPos.x = line.xA;
-    scaraState->armPos.y = line.yA;
-    
-    // Try to move to start point with current arm solution
-    if (checkBounds(line.xA, line.yA, scaraState->armPos.armSol, &theta1, &theta2, &bestArmSol)) {
-        scaraState->armPos.armSol = bestArmSol;
-        scaraState->armPos.theta1 = theta1;
-        scaraState->armPos.theta2 = theta2;
-        
-        // Move to start point
-        moveScaraJ(scaraState);
-        
-        // Set pen down for drawing if requested
-        if (pen == 'D' || pen == 'd') {
-            scaraState->toolPos.penPos = 'D';
-            scaraSetState(*scaraState);
-        }
-        
-        // Use lerp to draw the line with automatic arm solution switching
-        lerp(scaraState, line, numPoints);
-        
-        // Lift pen after drawing
-        scaraState->toolPos.penPos = 'U';
-        scaraSetState(*scaraState);
-        
-        return 0;
-    } else {
-        printf("\033[31m");
-        printf("Error: Failed to move to start point (%.2f, %.2f)\n", line.xA, line.yA);
-        printf("\033[0m");
-        return -1;
-    }
-}
+	double x,y,j1,j2;
+	
+	// Set the pen color based on the line color
+	scaraState->toolPos.penColor = line.color;
 
-/****************************************************************************************
-* Function: checkBounds
-*
-* Description:
-*	Checks if a point is reachable by the SCARA robot by testing inverse kinematics
-*   for both arm solutions.
-*
-* Inputs:
-*	x          - X coordinate to check
-*	y          - Y coordinate to check
-*   armSol     - Current arm solution to try first
-*   theta1     - Joint 1 angle in degrees
-*   theta2     - Joint 2 angle in degrees
-*   bestArmSol - Recommended arm solution as plan B
-*
-* Returns: int - 1 if reachable, 0 if not reachable
-*
-* Last Modified: April 25, 2025
-*****************************************************************************************/
-int checkBounds(double x, double y, int armSol, double* theta1, double* theta2, int* bestArmSol) {
-    double t1, t2, alt_t1, alt_t2;
+	//move to first line
+	scaraState->armPos.x = line.xA;
+	scaraState->armPos.y = line.yA;
+	scaraState->toolPos.penPos = 'u';
+	if (line.yA >= 0 && line.yB >= 0) {
+		scaraState->armPos.armSol = RIGHT_ARM_SOLUTION;
+	} else {
+		scaraState->armPos.armSol = LEFT_ARM_SOLUTION;
+	}
+	moveScaraJ(scaraState);
+	scaraState->toolPos.penPos = 'd';
+	
+	for (int i = 0; i < line.numPts; i++) {
 
-    // Try with the current arm solution first
-    if (scaraIK(x, y, &t1, &t2, armSol) == 0) {
-        if (theta1) *theta1 = t1;
-        if (theta2) *theta2 = t2;
-        if (bestArmSol) *bestArmSol = armSol;
-        return 1; // Point is reachable with current arm solution
-    }
+		//Calculate x,y coordinates
+		x = ((line.xB - line.xA) / (line.numPts - 1) * i) + line.xA;
+		y = ((line.yB - line.yA) / (line.numPts - 1) * i) + line.yA;
 
-    // Try with the alternative arm solution
-    int altArmSol = (armSol == LEFT_ARM_SOLUTION) ? RIGHT_ARM_SOLUTION : LEFT_ARM_SOLUTION;
-    if (scaraIK(x, y, &alt_t1, &alt_t2, altArmSol) == 0) {
-        if (theta1) *theta1 = alt_t1;
-        if (theta2) *theta2 = alt_t2;
-        if (bestArmSol) *bestArmSol = altArmSol;
-        return 1; // Point is reachable with alternative arm solution
-    }
+		//Determine best solution
+		if (scaraIK(x,y,&j1,&j2,scaraState->armPos.armSol)) { //Switch arm if needed
+			scaraState->armPos.armSol = scaraState->armPos.armSol == LEFT_ARM_SOLUTION ? RIGHT_ARM_SOLUTION : LEFT_ARM_SOLUTION;
+			printf("Changed arm: %d\n",scaraState->armPos.armSol);
+			scaraState->toolPos.penPos = 'u';
+			//If both arm solutions are invalid
+			if (scaraIK(x,y,&j1,&j2,scaraState->armPos.armSol)) {
+				printf("\033[31mInvalid arm solution.\033[0m\n");
+				continue;
+			}
+			if (!moveScaraJ(scaraState)) {
+				scaraState->toolPos.penPos = 'd';
+			}
+			printf("Changing arm.");
+		}
+		printf("Current arm: %d\n",scaraState->armPos.armSol);
 
-    // Point is not reachable with either arm solution
-    return 0;
-}
-
-/****************************************************************************************
-* Function: lerp
-*
-* Description:
-*	Performs linear interpolation between two points, breaking the line into segments
-*   and calling moveScaraJ for each point.
-*
-* Inputs:
-*	scaraState - Pointer to the SCARA robot state
-*	line       - Line data for the movement
-*   numpoints  - Number of points to interpolate (including start and end points)
-*
-* Returns: int - 0 for success
-*
-* Last Modified: April 25, 2025
-*****************************************************************************************/
-int lerp(SCARA_ROBOT *scaraState, LINE_DATA line, int numpoints) {
-    int i;
-    double t;
-    double dx, dy;
-    double theta1, theta2;
-    int bestArmSol;
-    int lastArmSol = scaraState->armPos.armSol;
-    int armSwitchOccurred = 0;
-
-    // Check if numpoints is valid
-    if (numpoints < 2) {
-    	printf("\033[31m");
-        printf("Error: Number of points must be at least 2\n");
-    	printf("\033[0m");
-        return -1;
-    }
-
-    // Calculate the step size for interpolation
-    double step = 1.0 / (numpoints - 1);
-
-    // Calculate the differences between start and end points
-    dx = line.xB - line.xA;
-    dy = line.yB - line.yA;
-
-    // Set pen down for drawing
-    scaraState->toolPos.penPos = 'd';
-
-    // Move to each interpolated point
-    for (i = 0; i < numpoints; i++) {
-        // Calculate interpolation parameter t (0.0 to 1.0)
-        t = i * step;
-
-        // Linear interpolation: p = p1 + t * (p2 - p1)
-        double x = line.xA + t * dx;
-        double y = line.yA + t * dy;
-
-        // Check if point is reachable and determine best arm solution
-        if (!checkBounds(x, y, scaraState->armPos.armSol, &theta1, &theta2, &bestArmSol)) {
-            // Point is unreachable, lift pen and continue to next point
-        	printf("\033[33m");
-            printf("Warning: Point (%.2f, %.2f) is unreachable, lifting pen\n", x, y);
-        	printf("\033[0m");
-            scaraState->toolPos.penPos = 'u';
-            scaraSetState(*scaraState);
-            continue;
-        }
-
-        // Check if arm solution needs to be switched
-        if (bestArmSol != scaraState->armPos.armSol) {
-            // Arm solution switch required
-            printf("Switching arm solution at point (%.2f, %.2f): %s to %s\n",
-                   x, y,
-                   (scaraState->armPos.armSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT",
-                   (bestArmSol == LEFT_ARM_SOLUTION) ? "LEFT" : "RIGHT");
-
-            // Lift pen before switching arm solution
-            scaraState->toolPos.penPos = 'u';
-            scaraSetState(*scaraState);
-
-            // Update arm solution
-            scaraState->armPos.armSol = bestArmSol;
-            armSwitchOccurred = 1;
-        }
-
-        // If pen was lifted due to arm switch, put it back down
-        if (armSwitchOccurred) {
-            moveScaraJ(scaraState); // Move to position with new arm solution
-            scaraState->toolPos.penPos = 'd';
-            scaraSetState(*scaraState);
-            armSwitchOccurred = 0;
-        } else {
-            // Move to the interpolated point
-        	// Update position and angles
-        	scaraState->armPos.x = x;
-        	scaraState->armPos.y = y;
-        	scaraState->armPos.theta1 = theta1;
-        	scaraState->armPos.theta2 = theta2;
-            moveScaraJ(scaraState);
-        }
-
-        // Remember last arm solution
-        lastArmSol = scaraState->armPos.armSol;
-    }
-
-    return 0;
+		//Update Scara robot
+		scaraState->armPos.x = x;
+		scaraState->armPos.y = y;
+		scaraState->armPos.theta1 = j1;
+		scaraState->armPos.theta2 = j2;
+		if (!moveScaraJ(scaraState) || i==0) {
+			scaraState->toolPos.penPos = 'd';
+		}
+	}
+	scaraState->toolPos.penPos = 'u';
+	scaraSetState(*scaraState);
+	return 0; // Add proper return statement
 }
 
 /****************************************************************************************
@@ -485,7 +357,8 @@ void scaraSetState(SCARA_ROBOT scaraState) {
 
     // Update pen color only if changed
     if (scaraState.toolPos.penColor.r != prevState.toolPos.penColor.r || scaraState.toolPos.penColor.g != prevState.toolPos.penColor.g || scaraState.toolPos.penColor.b != prevState.toolPos.penColor.b) {
-        setScaraColor(scaraState.toolPos.penColor.r, scaraState.toolPos.penColor.g, scaraState.toolPos.penColor.b);
+    	//setScaraAngles(0, 0);
+    	setScaraColor(scaraState.toolPos.penColor.r, scaraState.toolPos.penColor.g, scaraState.toolPos.penColor.b);
         prevState.toolPos.penColor.r = scaraState.toolPos.penColor.r;
         prevState.toolPos.penColor.g = scaraState.toolPos.penColor.g;
         prevState.toolPos.penColor.b = scaraState.toolPos.penColor.b;

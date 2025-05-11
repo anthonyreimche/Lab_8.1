@@ -68,43 +68,69 @@ void readScaraConsole(SCARA_CONSOLE *con){
 void executeScaraCommand(SCARA_CONSOLE* con){
     switch(con->cmdInd){
         case MOVE_SCARA_J:
+        {
             printf("\nMoveScaraJ\n>>>");
             con->scaraRobot.armPos.x = strtod(con->args[0], NULL);
             con->scaraRobot.armPos.y = strtod(con->args[1], NULL);
             moveScaraJ(&con->scaraRobot);
             break;
+        }
         case MOVE_SCARA_L:
+        {
             printf("\nMoveScaraL\n>>>");
-            line = initLine(strtod(con->args[0], NULL), strtod(con->args[1], NULL), strtod(con->args[2], NULL), strtod(con->args[3], NULL), atoi(con->args[4]));
+            // Parse all 5 arguments correctly: x1, y1, x2, y2, nPts
+            double x1 = strtod(con->args[0], NULL);
+            double y1 = strtod(con->args[1], NULL);
+            double x2 = strtod(con->args[2], NULL);
+            double y2 = strtod(con->args[3], NULL);
+            int nPts = atoi(con->args[4]);
+            
+            // Initialize line with the parsed parameters
+            line = initLine(x1, y1, x2, y2, nPts);
+            
+            // Move robot along the line
             moveScaraL(&con->scaraRobot, line);
             break;
+        }
         case SCARA_PEN_UP:
+        {
             printf("\nScaraPenUp\n>>>");
             con->scaraRobot.toolPos.penPos = 'u';
             scaraSetState(con->scaraRobot);
             break;
+        }
         case SCARA_PEN_DOWN:
+        {
             printf("\nScaraPenDown\n>>>");
             con->scaraRobot.toolPos.penPos = 'd';
             scaraSetState(con->scaraRobot);
             break;
+        }
         case SCARA_SPEED:
+        {
             printf("\nScaraSpeed\n>>>");
             con->scaraRobot.motorSpeed = con->args[0][0];
             scaraSetState(con->scaraRobot);
             break;
+        }
         case SCARA_PEN_COLOR:
+        {
             printf("\nScaraPenColor\n>>>");
             con->scaraRobot.toolPos.penColor.r = atoi(con->args[0]);
             con->scaraRobot.toolPos.penColor.g = atoi(con->args[1]);
             con->scaraRobot.toolPos.penColor.b = atoi(con->args[2]);
             scaraSetState(con->scaraRobot);
             break;
+        }
         case QUIT:
+        {
             printf("\nQuit\n>>>");
             break;
+        }
         default:
+        {
             printf("\nInvalid Command: %s\n>>>", con->command);
+        }
     }
 
 }

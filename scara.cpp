@@ -193,7 +193,7 @@ LINE_DATA initLine(double xA, double yA, double xB, double yB, int numPts) {
 	double dy = yB - yA;
 	double tolerance = 1.0e-5;
 
-	// Zero slope (horizontal line): Green
+	/*// Zero slope (horizontal line): Green
 	if (fabs(dy) <= tolerance) {
 		line.color.r = 0;
 		line.color.g = 255;
@@ -216,7 +216,7 @@ LINE_DATA initLine(double xA, double yA, double xB, double yB, int numPts) {
 		line.color.r = 255;
 		line.color.g = 0;
 		line.color.b = 0;
-	}
+	}*/
 
 	return line;
 }
@@ -261,15 +261,37 @@ int moveScaraL(SCARA_ROBOT *scaraState, LINE_DATA line){
 			printf("Y-axis crossing detected.\n");
 			if ((line.yA <= 0 && line.yB >= 0) || (line.yA >= 0 && line.yB <= 0)) { //Create a transfer point
 				printf("Creating Transfer point...\n");
-				double slope = (line.yB - line.yA) / (line.xB - line.xA);
-				double b = line.yA - slope * line.xA;
-				scaraState->armPos.x = -b / slope; // x-coordinate where y=0
-				scaraState->armPos.y = 0;
-				if (isnan(scaraState->armPos.x) || isnan(scaraState->armPos.y)) {
-					printf("Failed to create point.\n");
+				
+				// Check if the line is vertical (or nearly vertical)
+				double dx = line.xB - line.xA;
+				double dy = line.yB - line.yA;
+				
+				if (fabs(dx) < 0.0001) { // Vertical line
+					// For vertical lines, x remains the same at y=0
+					scaraState->armPos.x = line.xA;
+					scaraState->armPos.y = 0;
+					printf("Vertical line detected, using x = %f\n", scaraState->armPos.x);
+				} else if (fabs(dy) < 0.0001) { // Horizontal line
+					// For horizontal lines at y=0, any x is valid, use midpoint
+					scaraState->armPos.x = (line.xA + line.xB) / 2;
+					scaraState->armPos.y = 0;
+					printf("Horizontal line detected, using midpoint x = %f\n", scaraState->armPos.x);
+				} else { // Normal case
+					double slope = dy / dx;
+					double b = line.yA - slope * line.xA;
+					scaraState->armPos.x = -b / slope; // x-coordinate where y=0
+					scaraState->armPos.y = 0;
+				}
+				
+				// Check for NaN or out of range values
+				if (isnan(scaraState->armPos.x) || isnan(scaraState->armPos.y) || 
+				    scaraState->armPos.x < -1000 || scaraState->armPos.x > 1000) {
+					printf("Failed to create valid transfer point. Values: x=%f, y=%f\n", 
+					       scaraState->armPos.x, scaraState->armPos.y);
 					scaraState->toolPos.penPos = 'u';
 				} else {
-					printf("Point Created.\n");
+					printf("Transfer point created at (%f, %f)\n", 
+					       scaraState->armPos.x, scaraState->armPos.y);
 				}
 
 				moveScaraJ(scaraState);

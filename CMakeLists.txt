@@ -15,4 +15,4 @@ else()
     add_compile_options(-Wno-deprecated)
 endif()
 
-add_executable(Lab_8_new scara_main.cpp robot.cpp scara.cpp)
+add_executable(Lab_8_new scara_main.cpp robot.cpp scara.cpp scaraConsole.cpp)

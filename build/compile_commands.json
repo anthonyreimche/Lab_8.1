@@ -1,0 +1,26 @@
+[
+{
+  "directory": "C:/Users/roota/CLionProjects/Lab 8_new/build",
+  "command": "C:\\PROGRA~1\\JETBRA~1\\CLION2~1.2\\bin\\mingw\\bin\\G__~1.EXE   -g -std=gnu++14 -Wno-deprecated -o CMakeFiles\\Lab_8_new.dir\\scara_main.cpp.obj -c \"C:\\Users\\roota\\CLionProjects\\Lab 8_new\\scara_main.cpp\"",
+  "file": "C:/Users/roota/CLionProjects/Lab 8_new/scara_main.cpp",
+  "output": "CMakeFiles/Lab_8_new.dir/scara_main.cpp.obj"
+},
+{
+  "directory": "C:/Users/roota/CLionProjects/Lab 8_new/build",
+  "command": "C:\\PROGRA~1\\JETBRA~1\\CLION2~1.2\\bin\\mingw\\bin\\G__~1.EXE   -g -std=gnu++14 -Wno-deprecated -o CMakeFiles\\Lab_8_new.dir\\robot.cpp.obj -c \"C:\\Users\\roota\\CLionProjects\\Lab 8_new\\robot.cpp\"",
+  "file": "C:/Users/roota/CLionProjects/Lab 8_new/robot.cpp",
+  "output": "CMakeFiles/Lab_8_new.dir/robot.cpp.obj"
+},
+{
+  "directory": "C:/Users/roota/CLionProjects/Lab 8_new/build",
+  "command": "C:\\PROGRA~1\\JETBRA~1\\CLION2~1.2\\bin\\mingw\\bin\\G__~1.EXE   -g -std=gnu++14 -Wno-deprecated -o CMakeFiles\\Lab_8_new.dir\\scara.cpp.obj -c \"C:\\Users\\roota\\CLionProjects\\Lab 8_new\\scara.cpp\"",
+  "file": "C:/Users/roota/CLionProjects/Lab 8_new/scara.cpp",
+  "output": "CMakeFiles/Lab_8_new.dir/scara.cpp.obj"
+},
+{
+  "directory": "C:/Users/roota/CLionProjects/Lab 8_new/build",
+  "command": "C:\\PROGRA~1\\JETBRA~1\\CLION2~1.2\\bin\\mingw\\bin\\G__~1.EXE   -g -std=gnu++14 -Wno-deprecated -o CMakeFiles\\Lab_8_new.dir\\scaraConsole.cpp.obj -c \"C:\\Users\\roota\\CLionProjects\\Lab 8_new\\scaraConsole.cpp\"",
+  "file": "C:/Users/roota/CLionProjects/Lab 8_new/scaraConsole.cpp",
+  "output": "CMakeFiles/Lab_8_new.dir/scaraConsole.cpp.obj"
+}
+]

@@ -45,7 +45,7 @@
 			"compileCommandFragments" : 
 			[
 				{
-					"fragment" : "-g -std=gnu++14 -fdiagnostics-color=always"
+					"fragment" : "-g -std=gnu++14"
 				},
 				{
 					"backtrace" : 2,
@@ -65,7 +65,8 @@
 			[
 				0,
 				1,
-				2
+				2,
+				3
 			]
 		}
 	],
@@ -109,7 +110,8 @@
 			[
 				0,
 				1,
-				2
+				2,
+				3
 			]
 		}
 	],
@@ -131,6 +133,12 @@
 			"backtrace" : 1,
 			"compileGroupIndex" : 0,
 			"path" : "scara.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "scaraConsole.cpp",
 			"sourceGroupIndex" : 0
 		}
 	],

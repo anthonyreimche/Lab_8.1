@@ -125,6 +125,11 @@ int scaraIK(double toolX, double toolY, double* ang1, double* ang2, int arm) {
     *ang1 = theta1 * 180.0 / PI;
     *ang2 = theta2 * 180.0 / PI;
 
+	while (*ang1 > MAX_ABS_THETA1_DEG) *ang1 -= 360;
+	while (-*ang1 > MAX_ABS_THETA1_DEG) *ang1 += 360;
+	while (*ang2 > MAX_ABS_THETA2_DEG) *ang2 -= 360;
+	while (-*ang2 > MAX_ABS_THETA2_DEG) *ang2 += 360;
+
     // Check if angles are within mechanical limits
     if (fabs(*ang1) > MAX_ABS_THETA1_DEG || fabs(*ang2) > MAX_ABS_THETA2_DEG) {
     	printf("\033[90m");
@@ -149,7 +154,7 @@ int scaraIK(double toolX, double toolY, double* ang1, double* ang2, int arm) {
 int moveScaraJ(SCARA_ROBOT* scaraState) {
 	if (scaraIK(scaraState->armPos.x,scaraState->armPos.y, &scaraState->armPos.theta1, &scaraState->armPos.theta2, scaraState->armPos.armSol)) {
 		printf("\033[31m");
-		printf("moveScaraJ() failed: scaraIK() returned -1 (invalid move operation)\n");
+		printf("moveScaraJ() failed: scaraIK() returned -1 (invalid move operation)\nInput X: %f Y: %f\n", scaraState->armPos.x, scaraState->armPos.y);
 		printf("\033[0m");
 		return -1;
 	}
@@ -242,8 +247,9 @@ int moveScaraL(SCARA_ROBOT *scaraState, LINE_DATA line){
 	} else {
 		scaraState->armPos.armSol = LEFT_ARM_SOLUTION;
 	}
-	moveScaraJ(scaraState);
-	scaraState->toolPos.penPos = 'd';
+	if (!moveScaraJ(scaraState)) {
+		scaraState->toolPos.penPos = 'd';
+	}
 	
 	for (int i = 0; i < line.numPts; i++) {
 
@@ -251,11 +257,36 @@ int moveScaraL(SCARA_ROBOT *scaraState, LINE_DATA line){
 		x = ((line.xB - line.xA) / (line.numPts - 1) * i) + line.xA;
 		y = ((line.yB - line.yA) / (line.numPts - 1) * i) + line.yA;
 
+		if ((y < 0 & scaraState->armPos.y > 0) || (y > 0 & scaraState->armPos.y < 0)) {
+			printf("Y-axis crossing detected.\n");
+			if ((line.yA <= 0 && line.yB >= 0) || (line.yA >= 0 && line.yB <= 0)) { //Create a transfer point
+				printf("Creating Transfer point...\n");
+				double slope = (line.yB - line.yA) / (line.xB - line.xA);
+				double b = line.yA - slope * line.xA;
+				scaraState->armPos.x = -b / slope; // x-coordinate where y=0
+				scaraState->armPos.y = 0;
+				if (isnan(scaraState->armPos.x) || isnan(scaraState->armPos.y)) {
+					printf("Failed to create point.\n");
+					scaraState->toolPos.penPos = 'u';
+				} else {
+					printf("Point Created.\n");
+				}
+
+				moveScaraJ(scaraState);
+				scaraState->toolPos.penPos = 'u';
+				scaraState->armPos.armSol = scaraState->armPos.armSol == LEFT_ARM_SOLUTION ? RIGHT_ARM_SOLUTION : LEFT_ARM_SOLUTION;
+				if (!moveScaraJ(scaraState)) {
+					scaraState->toolPos.penPos = 'd';
+				}
+			}
+		}
+
 		//Determine best solution
 		if (scaraIK(x,y,&j1,&j2,scaraState->armPos.armSol)) { //Switch arm if needed
 			scaraState->armPos.armSol = scaraState->armPos.armSol == LEFT_ARM_SOLUTION ? RIGHT_ARM_SOLUTION : LEFT_ARM_SOLUTION;
 			printf("Changed arm: %d\n",scaraState->armPos.armSol);
 			scaraState->toolPos.penPos = 'u';
+			scaraSetState(*scaraState);
 			//If both arm solutions are invalid
 			if (scaraIK(x,y,&j1,&j2,scaraState->armPos.armSol)) {
 				printf("\033[31mInvalid arm solution.\033[0m\n");
@@ -266,7 +297,7 @@ int moveScaraL(SCARA_ROBOT *scaraState, LINE_DATA line){
 			}
 			printf("Changing arm.");
 		}
-		printf("Current arm: %d\n",scaraState->armPos.armSol);
+		//printf("Current arm: %d\n",scaraState->armPos.armSol);
 
 		//Update Scara robot
 		scaraState->armPos.x = x;
@@ -279,7 +310,7 @@ int moveScaraL(SCARA_ROBOT *scaraState, LINE_DATA line){
 	}
 	scaraState->toolPos.penPos = 'u';
 	scaraSetState(*scaraState);
-	return 0; // Add proper return statement
+	return 0;
 }
 
 /****************************************************************************************
@@ -357,11 +388,12 @@ void scaraSetState(SCARA_ROBOT scaraState) {
 
     // Update pen color only if changed
     if (scaraState.toolPos.penColor.r != prevState.toolPos.penColor.r || scaraState.toolPos.penColor.g != prevState.toolPos.penColor.g || scaraState.toolPos.penColor.b != prevState.toolPos.penColor.b) {
-    	//setScaraAngles(0, 0);
+    	setScaraAngles(0, 0);
     	setScaraColor(scaraState.toolPos.penColor.r, scaraState.toolPos.penColor.g, scaraState.toolPos.penColor.b);
         prevState.toolPos.penColor.r = scaraState.toolPos.penColor.r;
         prevState.toolPos.penColor.g = scaraState.toolPos.penColor.g;
         prevState.toolPos.penColor.b = scaraState.toolPos.penColor.b;
+    	setScaraAngles(scaraState.armPos.theta1, scaraState.armPos.theta2);
     }
 
     // Update motor speed only if changed
